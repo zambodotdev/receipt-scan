@@ -3,113 +3,433 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>receipt scan: check every zambo receipt in a page at once</title>
-<meta name="description" content="paste a pr, a doc or a chat log and every zambo receipt link in it gets checked live against the aer-1 verify endpoint. only the receipt ids leave your browser.">
+<title>receipt scan: check every zambo receipt in the work you were handed</title>
+<meta name="description" content="paste a pull request, doc, chat log, file or page link. every zambo receipt in it gets checked live. only the receipt ids leave your browser.">
 <style>
-  body { background:#080908; color:#e8e8e2; font:16px/1.55 system-ui, sans-serif; max-width:860px; margin:40px auto; padding:0 20px; }
-  h1 { color:#c8f135; font-size:28px; margin-bottom:4px; }
-  a { color:#c8f135; }
-  textarea { width:100%; min-height:180px; background:#111110; color:#e8e8e2; border:1px solid #33332e; border-radius:8px; padding:12px; font:13px/1.5 ui-monospace, monospace; box-sizing:border-box; }
-  button { background:#c8f135; color:#080908; border:0; border-radius:8px; padding:10px 22px; font-size:16px; font-weight:600; cursor:pointer; margin:12px 0; }
-  .row { border:1px solid #33332e; border-radius:8px; padding:10px 14px; margin:8px 0; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  .ok { color:#c8f135; font-weight:600; }
-  .bad { color:#ff7a6b; font-weight:600; }
-  .dim { color:#9a9a90; }
-  .mono { font-family:ui-monospace, monospace; font-size:13px; word-break:break-all; }
-  #summary { font-size:18px; margin:16px 0 4px; }
-  .bookmarklet { display:inline-block; border:1px dashed #c8f135; border-radius:8px; padding:8px 14px; margin:10px 0; text-decoration:none; }
-  footer { margin-top:36px; border-top:1px solid #33332e; padding-top:14px; color:#9a9a90; font-size:14px; }
+  :root { --bg:#080908; --panel:#101010; --line:#2c2c28; --ink:#ecece4; --dim:#9c9c92; --lime:#c8f135; --red:#ff7a6b; --amber:#ffcf5c; }
+  * { box-sizing:border-box; }
+  body { background:var(--bg); color:var(--ink); font:16px/1.55 system-ui, -apple-system, sans-serif; margin:0; }
+  .wrap { max-width:880px; margin:0 auto; padding:28px 18px 48px; }
+  .brand { color:var(--lime); font-weight:700; letter-spacing:.14em; font-size:12px; text-transform:uppercase; }
+  h1 { font-size:30px; line-height:1.2; margin:6px 0 8px; }
+  .sub { color:var(--dim); margin:0 0 22px; max-width:640px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .tab { background:transparent; color:var(--dim); border:1px solid var(--line); border-radius:999px; padding:8px 16px; font-size:15px; cursor:pointer; }
+  .tab.on { color:#080908; background:var(--lime); border-color:var(--lime); font-weight:600; }
+  textarea, input[type=url] { width:100%; background:#0a0a0a; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:12px; font:14px/1.5 ui-monospace, Menlo, monospace; }
+  textarea { min-height:170px; resize:vertical; }
+  .drop { border:1.5px dashed var(--line); border-radius:8px; padding:26px 14px; text-align:center; color:var(--dim); cursor:pointer; }
+  .drop.over { border-color:var(--lime); color:var(--ink); }
+  .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:14px; }
+  .go { background:var(--lime); color:#080908; border:0; border-radius:10px; padding:13px 28px; font-size:17px; font-weight:700; cursor:pointer; }
+  .go:disabled { opacity:.45; cursor:wait; }
+  .ghost { background:transparent; color:var(--dim); border:1px solid var(--line); border-radius:10px; padding:12px 18px; font-size:15px; cursor:pointer; }
+  .linkbtn { background:none; border:0; color:var(--lime); font-size:15px; cursor:pointer; padding:6px 2px; text-decoration:underline; }
+  .hint { color:var(--dim); font-size:14px; margin-top:10px; }
+  .err { color:var(--red); font-size:14px; margin-top:10px; }
+  #progressWrap { display:none; height:8px; background:#1b1b19; border-radius:99px; overflow:hidden; margin:18px 0 4px; }
+  #progressBar { height:100%; width:0; background:var(--lime); transition:width .25s; }
+  #summaryCard { display:none; border:1px solid var(--line); border-radius:12px; padding:16px; margin-top:14px; background:var(--panel); }
+  #summaryCard.good { border-color:var(--lime); }
+  #summaryCard.mixed { border-color:var(--amber); }
+  #bigVerdict { font-size:22px; font-weight:700; margin:0 0 2px; }
+  #subVerdict { color:var(--dim); margin:0 0 10px; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-size:14px; }
+  .chip b { color:var(--lime); }
+  .chip.bad b { color:var(--red); }
+  .row { border:1px solid var(--line); border-radius:12px; padding:13px 15px; margin-top:10px; background:var(--panel); }
+  .rowTop { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .st { font-weight:700; border-radius:999px; padding:3px 12px; font-size:14px; white-space:nowrap; }
+  .st.ok { background:var(--lime); color:#080908; }
+  .st.bad { background:var(--red); color:#080908; }
+  .st.wait { background:#26261f; color:var(--dim); }
+  .rid { font-family:ui-monospace, Menlo, monospace; font-size:14px; }
+  .meta { color:var(--dim); font-size:14px; }
+  .preview { color:var(--dim); font-size:14px; margin-top:6px; white-space:pre-wrap; word-break:break-word; }
+  details { margin-top:8px; }
+  summary { cursor:pointer; color:var(--lime); font-size:14px; }
+  .checks { margin:8px 0 4px; padding:0; list-style:none; font-size:14px; }
+  .checks li { display:flex; justify-content:space-between; gap:12px; padding:4px 0; border-bottom:1px solid #1d1d1a; }
+  .checks .pass { color:var(--lime); }
+  .checks .nc { color:var(--dim); }
+  .checks .fail { color:var(--red); }
+  .rowBtns { margin-left:auto; display:flex; gap:8px; }
+  .mini { background:transparent; border:1px solid var(--line); color:var(--dim); border-radius:8px; padding:5px 11px; font-size:13px; cursor:pointer; }
+  .howto { margin-top:34px; }
+  .howto h2 { font-size:20px; margin-bottom:6px; }
+  .howto ol { color:var(--dim); padding-left:20px; }
+  .bookmarklet { display:inline-block; border:1.5px dashed var(--lime); color:var(--lime); border-radius:10px; padding:9px 16px; text-decoration:none; font-weight:600; margin:6px 0; }
+  footer { margin-top:38px; border-top:1px solid var(--line); padding-top:16px; color:var(--dim); font-size:14px; }
+  footer a, .sub a { color:var(--lime); }
+  @media (max-width:560px) { h1 { font-size:25px; } .go { width:100%; } }
 </style>
 </head>
 <body>
-<h1>receipt scan</h1>
-<p>paste a pr, a doc or a chat log. every zambo receipt link in it (zambo.dev/run/ID, zambo.dev/verify/?id=ID, zambo.dev/api/receipt/ID) is checked live against the aer-1 verify endpoint. only the receipt ids leave your browser. at most 50 ids per scan.</p>
-<p>or drag this bookmarklet to your bookmarks bar and click it on any page: <a class="bookmarklet" href="javascript:(function(){var s=document.body?document.body.innerText:'',h='';document.querySelectorAll('a[href]').forEach(function(a){h+=' '+a.href});var m=(s+' '+h).match(/zambo\.dev\/[^\s'&quot;<>]*?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi)||[];var ids=[],seen={};m.forEach(function(x){var u=x.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)[0].toLowerCase();if(!seen[u]){seen[u]=1;ids.push(u)}});window.open('https://zambodotdev.github.io/receipt-scan/%23ids='+ids.join(','),'_blank')})()">scan this page for receipts</a></p>
-<textarea id="input" placeholder="paste the deliverable here, or paste receipt links one per line"></textarea>
-<br>
-<button id="go">check receipts</button>
-<div id="summary"></div>
-<div id="results"></div>
-<footer>
-<p>a verified receipt proves the saved bytes are unchanged since the call ran. it does not prove the answer is right.</p>
-<p>want this on your own ai: <a href="https://zambo.dev/add/?ref=receipt-scan">https://zambo.dev/add/?ref=receipt-scan</a></p>
-<p>check one receipt on its own: <a href="https://zambo.dev/verify/">zambo.dev/verify</a></p>
-</footer>
+<div class="wrap">
+  <div class="brand">zambo receipt scan</div>
+  <h1>check every receipt in the work you were handed</h1>
+  <p class="sub">someone gave you a pull request, a doc or a chat full of receipt links? check all of them at once, live. only the receipt ids leave your browser. nothing else is sent anywhere.</p>
+
+  <div class="panel">
+    <div class="tabs">
+      <button class="tab on" data-tab="paste">paste text</button>
+      <button class="tab" data-tab="link">page link</button>
+      <button class="tab" data-tab="file">drop a file</button>
+    </div>
+
+    <div id="tab-paste">
+      <textarea id="input" placeholder="paste the pull request, doc, chat log or receipt links here"></textarea>
+    </div>
+    <div id="tab-link" style="display:none">
+      <input type="url" id="urlInput" placeholder="https://github.com/... or any page with receipt links in it">
+      <div class="hint">the page is read in your browser and scanned here. some sites block other browsers from reading them; if that happens, open the page, copy the text, and use paste text instead.</div>
+    </div>
+    <div id="tab-file" style="display:none">
+      <div class="drop" id="drop">drop a .txt, .md, .json or .log file here, or click to choose one</div>
+      <input type="file" id="fileInput" accept=".txt,.md,.json,.log,.html,.csv" style="display:none">
+      <div class="hint">the file is read on your device only. it is never uploaded.</div>
+    </div>
+
+    <div class="actions">
+      <button class="go" id="go">check receipts</button>
+      <button class="ghost" id="clear">clear</button>
+      <button class="linkbtn" id="sample">load a sample first</button>
+    </div>
+    <div class="hint" id="sampleNote" style="display:none">sample loaded: two real receipts and one fake one, so you can see what verified and not found look like.</div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="progressWrap"><div id="progressBar"></div></div>
+  <div id="summaryCard">
+    <p id="bigVerdict"></p>
+    <p id="subVerdict"></p>
+    <div class="chips" id="chips"></div>
+    <div class="actions"><button class="ghost" id="copySummary">copy summary</button></div>
+  </div>
+  <div id="results"></div>
+
+  <div class="howto">
+    <h2>scan any page in one click</h2>
+    <ol>
+      <li>drag this button to your bookmarks bar: <a class="bookmarklet" href="javascript:(function(){var s=document.body?document.body.innerText:'',h='';document.querySelectorAll('a[href]').forEach(function(a){h+=' '+a.href});var m=(s+' '+h).match(/zambo\.dev\/[^\s'&quot;<>]*?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi)||[];var ids=[],seen={};m.forEach(function(x){var u=x.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)[0].toLowerCase();if(!seen[u]){seen[u]=1;ids.push(u)}});window.open('https://zambodotdev.github.io/receipt-scan/%23ids='+ids.join(','),'_blank')})()">scan this page</a></li>
+      <li>open any page that contains zambo receipt links.</li>
+      <li>click the bookmark. the scan opens here with every receipt on that page already checked.</li>
+    </ol>
+  </div>
+
+  <footer>
+    <p>a verified receipt proves the saved bytes are unchanged since the call ran. it does not prove the answer is right.</p>
+    <p>want receipts on your own ai work: <a href="https://zambo.dev/add/?ref=receipt-scan">add zambo in one url, no key, no account</a>. checking just one receipt: <a href="https://zambo.dev/verify/">zambo.dev/verify</a>.</p>
+  </footer>
+</div>
+
 <script>
 var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 var LINK_RE = new RegExp("zambo\\.dev\\/[^\\s\"'<>\\])]*?(" + UUID + ")", "gi");
 var BARE_RE = new RegExp("^\\s*(" + UUID + ")\\s*$", "gm");
 var MAX = 50;
+var CHECK_ORDER = ["commitment_matches", "canonical_payload_matches", "provenance_binding", "metadata_binding", "issuer_authentication", "signature", "schema", "chain"];
+var lastResults = [];
+
+var SAMPLE = [
+  "deliverable: market check and a capability scan, run by my agent this morning.",
+  "eth price check: https://zambo.dev/run/5420f6f0-a635-4010-a7d4-311f7cd6b0ab",
+  "scan receipt: https://zambo.dev/run/c7cca0ec-b1fb-4fe4-b8e8-de5dcb5027ea",
+  "this one was typed by hand and is fake: https://zambo.dev/run/00000000-0000-4000-8000-000000000000"
+].join("\n");
 
 function extractIds(text) {
-  var ids = [], seen = {};
+  var ids = [], seen = {}, found = 0, m;
+  var r1 = new RegExp(LINK_RE.source, "gi"), r2 = new RegExp(BARE_RE.source, "gm");
   function add(id) {
+    found++;
     id = id.toLowerCase();
     if (!seen[id]) { seen[id] = 1; ids.push(id); }
   }
-  var m, r1 = new RegExp(LINK_RE.source, "gi"), r2 = new RegExp(BARE_RE.source, "gm");
-  while ((m = r1.exec(text)) !== null) add(m[1]);
-  while ((m = r2.exec(text)) !== null) add(m[1]);
-  return ids;
+  while ((m = r1.exec(text || "")) !== null) add(m[1]);
+  while ((m = r2.exec(text || "")) !== null) add(m[1]);
+  return { ids: ids, found: found };
 }
 
-function rowEl(id) {
-  var div = document.createElement("div");
-  div.className = "row";
-  div.innerHTML = '<span class="mono">' + id + '</span><span class="dim">checking...</span>';
-  document.getElementById("results").appendChild(div);
-  return div;
-}
-
-function check(id, div) {
-  return fetch("https://zambo.dev/api/v2/receipt/" + id + "/verify")
-    .then(function (res) {
-      if (res.status === 404) return { state: "not found" };
-      if (!res.ok) return { state: "could not verify (http " + res.status + ")" };
-      return res.json().then(function (data) {
-        return { state: data.verification_status || "unknown" };
-      });
-    })
-    .catch(function () { return { state: "unreachable" }; })
-    .then(function (r) {
-      var good = r.state === "verified";
-      div.innerHTML = '<span class="mono">' + id + '</span>' +
-        '<span class="' + (good ? "ok" : "bad") + '">' + r.state + '</span>' +
-        '<a href="https://zambo.dev/verify/?id=' + id + '">open on verify page</a>';
-      return good ? 1 : 0;
-    });
-}
-
-function run(ids) {
-  var results = document.getElementById("results");
-  var summary = document.getElementById("summary");
-  results.innerHTML = "";
-  summary.textContent = "";
-  if (!ids.length) {
-    summary.textContent = "no zambo receipt links found in that text.";
-    return;
-  }
-  var capped = ids.length > MAX;
-  var list = ids.slice(0, MAX);
-  summary.textContent = "checking " + list.length + " receipt" + (list.length === 1 ? "" : "s") + "..." +
-    (capped ? " (scan capped at " + MAX + "; " + ids.length + " found)" : "");
-  var jobs = list.map(function (id) { return check(id, rowEl(id)); });
-  Promise.all(jobs).then(function (counts) {
-    var ok = counts.reduce(function (a, b) { return a + b; }, 0);
-    summary.textContent = ok + " of " + list.length + " receipts verified" +
-      (capped ? " (scan capped at " + MAX + " of " + ids.length + " found)" : "");
+function checkList(data) {
+  var top = (data && data.checks) || {};
+  var inner = (data && data.receipt && data.receipt.checks) || {};
+  var src = Object.keys(top).length ? top : inner;
+  var keys = CHECK_ORDER.filter(function (k) { return src[k]; });
+  Object.keys(src).forEach(function (k) {
+    if (keys.indexOf(k) < 0) keys.push(k);
+  });
+  return keys.map(function (k) {
+    var c = src[k] || {};
+    var label = (c.label || (inner[k] && inner[k].label) || k.replace(/_/g, " ")).replace(/\s*\(not checked\)\s*$/i, "");
+    var status = c.status || (c.passed ? "pass" : "not_checked");
+    return { key: k, label: label, status: status };
   });
 }
 
-document.getElementById("go").addEventListener("click", function () {
-  run(extractIds(document.getElementById("input").value));
+function previewLine(data) {
+  try {
+    var r = data && data.receipt;
+    if (!r || !r.result_preview) return "";
+    var p = JSON.parse(r.result_preview);
+    var t = (p && p.result) ? String(p.result) : "";
+    return t.split("\n")[0].slice(0, 140);
+  } catch (e) { return ""; }
+}
+
+function toolAndTime(data) {
+  var r = (data && data.receipt) || {};
+  var tool = (r.tool && r.tool.name) || (r.tools && r.tools[0]) || "";
+  var when = "";
+  if (r.created_at) {
+    var d = new Date(r.created_at);
+    if (!isNaN(d)) when = d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  return [tool, when].filter(Boolean).join(" · ");
+}
+
+function shortId(id) { return id.slice(0, 8) + "..." + id.slice(-4); }
+
+function el(html) { var d = document.createElement("div"); d.innerHTML = html; return d.firstElementChild; }
+
+function statusChip(state) {
+  if (state === "verified") return '<span class="st ok">verified</span>';
+  if (state === "checking") return '<span class="st wait">checking</span>';
+  return '<span class="st bad">' + state + "</span>";
+}
+
+function checkOne(id, row) {
+  return fetch("https://zambo.dev/api/v2/receipt/" + id + "/verify")
+    .then(function (res) {
+      if (res.status === 404) return { id: id, state: "not found", data: null };
+      if (!res.ok) return { id: id, state: "could not verify (http " + res.status + ")", data: null };
+      return res.json().then(function (data) {
+        return { id: id, state: data.verification_status || "unknown", data: data };
+      });
+    })
+    .catch(function () { return { id: id, state: "unreachable", data: null }; })
+    .then(function (r) { renderRow(row, r); return r; });
+}
+
+function renderRow(row, r) {
+  var meta = r.data ? toolAndTime(r.data) : "";
+  var prev = r.data ? previewLine(r.data) : "";
+  var html = '<div class="rowTop">' + statusChip(r.state) +
+    '<span class="rid" title="' + r.id + '">' + shortId(r.id) + "</span>" +
+    (meta ? '<span class="meta">' + meta + "</span>" : "") +
+    '<span class="rowBtns">' +
+    '<button class="mini" data-copy="' + r.id + '">copy id</button>' +
+    '<a class="mini" style="text-decoration:none" href="https://zambo.dev/verify/?id=' + r.id + '">full receipt</a>' +
+    "</span></div>";
+  if (prev) html += '<div class="preview">' + prev.replace(/</g, "&lt;") + "</div>";
+  if (r.data) {
+    var items = checkList(r.data).map(function (c) {
+      var cls = c.status === "pass" ? "pass" : (c.status === "not_checked" ? "nc" : "fail");
+      var word = c.status === "pass" ? "pass" : (c.status === "not_checked" ? "not checked" : c.status);
+      return "<li><span>" + c.label.replace(/</g, "&lt;") + '</span><span class="' + cls + '">' + word + "</span></li>";
+    }).join("");
+    var hash = (r.data.receipt && r.data.receipt.output_hash) || "";
+    html += "<details><summary>what was checked</summary><ul class=\"checks\">" + items + "</ul>" +
+      (hash ? '<div class="meta">output hash ' + hash.slice(0, 23) + "...</div>" : "") + "</details>";
+  }
+  row.innerHTML = html;
+}
+
+function setProgress(done, total) {
+  var wrap = document.getElementById("progressWrap");
+  wrap.style.display = total ? "block" : "none";
+  document.getElementById("progressBar").style.width = total ? Math.round(100 * done / total) + "%" : "0";
+}
+
+function run(ids, found) {
+  var results = document.getElementById("results");
+  var card = document.getElementById("summaryCard");
+  var go = document.getElementById("go");
+  results.innerHTML = "";
+  card.style.display = "none";
+  lastResults = [];
+  if (!ids.length) {
+    document.getElementById("err").textContent = "no zambo receipt links found. receipts look like zambo.dev/run/ followed by an id. if the work has no links in it, there is nothing to check yet.";
+    setProgress(0, 0);
+    return;
+  }
+  document.getElementById("err").textContent = "";
+  var capped = ids.length > MAX;
+  var list = ids.slice(0, MAX);
+  go.disabled = true;
+  setProgress(0, list.length);
+  var done = 0;
+  var jobs = list.map(function (id) {
+    var row = el('<div class="row"><div class="rowTop">' + statusChip("checking") +
+      '<span class="rid">' + shortId(id) + '</span><span class="meta">checking live</span></div></div>');
+    results.appendChild(row);
+    return checkOne(id, row).then(function (r) {
+      done++;
+      setProgress(done, list.length);
+      return r;
+    });
+  });
+  Promise.all(jobs).then(function (rs) {
+    go.disabled = false;
+    lastResults = rs;
+    var ok = rs.filter(function (r) { return r.state === "verified"; }).length;
+    var nf = rs.filter(function (r) { return r.state === "not found"; }).length;
+    var other = rs.length - ok - nf;
+    card.style.display = "block";
+    card.className = ok === rs.length ? "good" : "mixed";
+    document.getElementById("bigVerdict").textContent = ok + " of " + rs.length + " receipts verified";
+    var sub = [];
+    if (ok === rs.length) sub.push("every receipt in this work checks out.");
+    else sub.push("some receipts did not check out. the rows below show which, and why.");
+    if (found > rs.length) sub.push(found + " links found, " + rs.length + " unique receipts.");
+    if (capped) sub.push("scan capped at " + MAX + " receipts.");
+    document.getElementById("subVerdict").textContent = sub.join(" ");
+    document.getElementById("chips").innerHTML =
+      '<span class="chip"><b>' + ok + "</b> verified</span>" +
+      (nf ? '<span class="chip bad"><b>' + nf + "</b> not found</span>" : "") +
+      (other ? '<span class="chip bad"><b>' + other + "</b> could not verify</span>" : "");
+    setProgress(0, 0);
+  });
+}
+
+function scanText(text) {
+  var r = extractIds(text);
+  run(r.ids, r.found);
+}
+
+function toRawUrl(u) {
+  try {
+    var url = new URL(u);
+    if (url.hostname === "github.com") {
+      var parts = url.pathname.split("/").filter(Boolean);
+      if (parts.length >= 5 && parts[2] === "blob") {
+        return "https://raw.githubusercontent.com/" + parts[0] + "/" + parts[1] + "/" + parts.slice(3).join("/");
+      }
+    }
+    if (url.hostname === "gist.github.com") {
+      var p = url.pathname.split("/").filter(Boolean);
+      if (p.length >= 2) return "https://gist.githubusercontent.com/" + p[0] + "/" + p[1] + "/raw";
+    }
+  } catch (e) {}
+  return u;
+}
+
+var tabs = document.querySelectorAll(".tab");
+tabs.forEach(function (t) {
+  t.addEventListener("click", function () {
+    tabs.forEach(function (x) { x.classList.remove("on"); });
+    t.classList.add("on");
+    ["paste", "link", "file"].forEach(function (name) {
+      document.getElementById("tab-" + name).style.display = name === t.dataset.tab ? "block" : "none";
+    });
+  });
 });
 
-if (location.hash.indexOf("#ids=") === 0) {
-  var raw = location.hash.slice(5).split(",").map(function (s) { return s.trim().toLowerCase(); })
-    .filter(function (s) { return new RegExp("^" + UUID + "$", "i").test(s); });
-  if (raw.length) run(raw);
+document.getElementById("sample").addEventListener("click", function () {
+  document.querySelector('[data-tab="paste"]').click();
+  document.getElementById("input").value = SAMPLE;
+  document.getElementById("sampleNote").style.display = "block";
+});
+
+document.getElementById("clear").addEventListener("click", function () {
+  document.getElementById("input").value = "";
+  document.getElementById("urlInput").value = "";
+  document.getElementById("results").innerHTML = "";
+  document.getElementById("summaryCard").style.display = "none";
+  document.getElementById("err").textContent = "";
+  document.getElementById("sampleNote").style.display = "none";
+  setProgress(0, 0);
+});
+
+document.getElementById("go").addEventListener("click", function () {
+  var on = document.querySelector(".tab.on").dataset.tab;
+  document.getElementById("err").textContent = "";
+  if (on === "link") {
+    var u = document.getElementById("urlInput").value.trim();
+    if (!u) { document.getElementById("err").textContent = "paste a page link first."; return; }
+    var go = document.getElementById("go");
+    go.disabled = true; go.textContent = "reading page...";
+    fetch(toRawUrl(u)).then(function (res) {
+      if (!res.ok) throw new Error("http " + res.status);
+      return res.text();
+    }).then(function (text) {
+      go.disabled = false; go.textContent = "check receipts";
+      scanText(text);
+    }).catch(function () {
+      go.disabled = false; go.textContent = "check receipts";
+      document.getElementById("err").textContent = "that page would not let your browser read it. open it, copy the text, and use paste text instead.";
+    });
+    return;
+  }
+  if (on === "file") {
+    document.getElementById("err").textContent = "drop or choose a file first, then check receipts.";
+    document.getElementById("drop").click();
+    return;
+  }
+  scanText(document.getElementById("input").value);
+});
+
+document.getElementById("input").addEventListener("keydown", function (e) {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") document.getElementById("go").click();
+});
+
+var drop = document.getElementById("drop"), fileInput = document.getElementById("fileInput");
+drop.addEventListener("click", function () { fileInput.click(); });
+drop.addEventListener("dragover", function (e) { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", function () { drop.classList.remove("over"); });
+drop.addEventListener("drop", function (e) {
+  e.preventDefault(); drop.classList.remove("over");
+  if (e.dataTransfer.files.length) readFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", function () {
+  if (fileInput.files.length) readFile(fileInput.files[0]);
+});
+function readFile(f) {
+  var reader = new FileReader();
+  reader.onload = function () {
+    document.querySelector('[data-tab="paste"]').click();
+    document.getElementById("input").value = String(reader.result || "");
+    scanText(document.getElementById("input").value);
+  };
+  reader.readAsText(f);
 }
+
+document.getElementById("results").addEventListener("click", function (e) {
+  var b = e.target.closest("[data-copy]");
+  if (b && navigator.clipboard) navigator.clipboard.writeText(b.dataset.copy);
+});
+
+document.getElementById("copySummary").addEventListener("click", function () {
+  if (!lastResults.length || !navigator.clipboard) return;
+  var lines = ["receipt scan: " + lastResults.filter(function (r) { return r.state === "verified"; }).length +
+    " of " + lastResults.length + " verified"];
+  lastResults.forEach(function (r) {
+    lines.push(r.state + " " + r.id + " https://zambo.dev/verify/?id=" + r.id);
+  });
+  lines.push("checked at https://zambodotdev.github.io/receipt-scan/");
+  navigator.clipboard.writeText(lines.join("\n"));
+  this.textContent = "copied";
+  var btn = this;
+  setTimeout(function () { btn.textContent = "copy summary"; }, 1600);
+});
+
+(function () {
+  var raw = "";
+  if (location.hash.indexOf("#ids=") === 0) raw = location.hash.slice(5);
+  if (!raw) {
+    var q = new URLSearchParams(location.search).get("ids");
+    if (q) raw = q;
+  }
+  if (raw) {
+    var ids = raw.split(",").map(function (s) { return s.trim().toLowerCase(); })
+      .filter(function (s) { return new RegExp("^" + UUID + "$", "i").test(s); });
+    var seen = {}, uniq = [];
+    ids.forEach(function (i) { if (!seen[i]) { seen[i] = 1; uniq.push(i); } });
+    if (uniq.length) run(uniq, uniq.length);
+  }
+})();
 </script>
 </body>
 </html>
