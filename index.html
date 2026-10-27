@@ -148,7 +148,14 @@ function extractIds(text) {
     id = id.toLowerCase();
     if (!seen[id]) { seen[id] = 1; ids.push(id); }
   }
-  while ((m = r1.exec(text || "")) !== null) add(m[1]);
+  if ((text || "").indexOf("receipt_schema_version") !== -1) { // a receipt JSON export: its own top-level id counts
+    var jm = (text || "").match(new RegExp("\"id\"\\s*:\\s*\"(" + UUID + ")\"", "i"));
+    if (jm) add(jm[1]);
+  }
+  while ((m = r1.exec(text || "")) !== null) {
+    if (/^zambo\.dev\/workflow\//i.test(m[0])) continue; // workflow ids are not receipt ids
+    add(m[1]);
+  }
   while ((m = r2.exec(text || "")) !== null) add(m[1]);
   return { ids: ids, found: found };
 }
