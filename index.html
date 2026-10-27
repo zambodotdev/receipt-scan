@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>receipt scan: check every zambo receipt in a page at once</title>
+<meta name="description" content="paste a pr, a doc or a chat log and every zambo receipt link in it gets checked live against the aer-1 verify endpoint. only the receipt ids leave your browser.">
+<style>
+  body { background:#080908; color:#e8e8e2; font:16px/1.55 system-ui, sans-serif; max-width:860px; margin:40px auto; padding:0 20px; }
+  h1 { color:#c8f135; font-size:28px; margin-bottom:4px; }
+  a { color:#c8f135; }
+  textarea { width:100%; min-height:180px; background:#111110; color:#e8e8e2; border:1px solid #33332e; border-radius:8px; padding:12px; font:13px/1.5 ui-monospace, monospace; box-sizing:border-box; }
+  button { background:#c8f135; color:#080908; border:0; border-radius:8px; padding:10px 22px; font-size:16px; font-weight:600; cursor:pointer; margin:12px 0; }
+  .row { border:1px solid #33332e; border-radius:8px; padding:10px 14px; margin:8px 0; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .ok { color:#c8f135; font-weight:600; }
+  .bad { color:#ff7a6b; font-weight:600; }
+  .dim { color:#9a9a90; }
+  .mono { font-family:ui-monospace, monospace; font-size:13px; word-break:break-all; }
+  #summary { font-size:18px; margin:16px 0 4px; }
+  .bookmarklet { display:inline-block; border:1px dashed #c8f135; border-radius:8px; padding:8px 14px; margin:10px 0; text-decoration:none; }
+  footer { margin-top:36px; border-top:1px solid #33332e; padding-top:14px; color:#9a9a90; font-size:14px; }
+</style>
+</head>
+<body>
+<h1>receipt scan</h1>
+<p>paste a pr, a doc or a chat log. every zambo receipt link in it (zambo.dev/run/ID, zambo.dev/verify/?id=ID, zambo.dev/api/receipt/ID) is checked live against the aer-1 verify endpoint. only the receipt ids leave your browser. at most 50 ids per scan.</p>
+<p>or drag this bookmarklet to your bookmarks bar and click it on any page: <a class="bookmarklet" href="javascript:(function(){var s=document.body?document.body.innerText:'',h='';document.querySelectorAll('a[href]').forEach(function(a){h+=' '+a.href});var m=(s+' '+h).match(/zambo\.dev\/[^\s'&quot;<>]*?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi)||[];var ids=[],seen={};m.forEach(function(x){var u=x.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)[0].toLowerCase();if(!seen[u]){seen[u]=1;ids.push(u)}});window.open('https://zambodotdev.github.io/receipt-scan/%23ids='+ids.join(','),'_blank')})()">scan this page for receipts</a></p>
+<textarea id="input" placeholder="paste the deliverable here, or paste receipt links one per line"></textarea>
+<br>
+<button id="go">check receipts</button>
+<div id="summary"></div>
+<div id="results"></div>
+<footer>
+<p>a verified receipt proves the saved bytes are unchanged since the call ran. it does not prove the answer is right.</p>
+<p>want this on your own ai: <a href="https://zambo.dev/add/?ref=receipt-scan">https://zambo.dev/add/?ref=receipt-scan</a></p>
+<p>check one receipt on its own: <a href="https://zambo.dev/verify/">zambo.dev/verify</a></p>
+</footer>
+<script>
+var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+var LINK_RE = new RegExp("zambo\\.dev\\/[^\\s\"'<>\\])]*?(" + UUID + ")", "gi");
+var BARE_RE = new RegExp("^\\s*(" + UUID + ")\\s*$", "gm");
+var MAX = 50;
+
+function extractIds(text) {
+  var ids = [], seen = {};
+  function add(id) {
+    id = id.toLowerCase();
+    if (!seen[id]) { seen[id] = 1; ids.push(id); }
+  }
+  var m, r1 = new RegExp(LINK_RE.source, "gi"), r2 = new RegExp(BARE_RE.source, "gm");
+  while ((m = r1.exec(text)) !== null) add(m[1]);
+  while ((m = r2.exec(text)) !== null) add(m[1]);
+  return ids;
+}
+
+function rowEl(id) {
+  var div = document.createElement("div");
+  div.className = "row";
+  div.innerHTML = '<span class="mono">' + id + '</span><span class="dim">checking...</span>';
+  document.getElementById("results").appendChild(div);
+  return div;
+}
+
+function check(id, div) {
+  return fetch("https://zambo.dev/api/v2/receipt/" + id + "/verify")
+    .then(function (res) {
+      if (res.status === 404) return { state: "not found" };
+      if (!res.ok) return { state: "could not verify (http " + res.status + ")" };
+      return res.json().then(function (data) {
+        return { state: data.verification_status || "unknown" };
+      });
+    })
+    .catch(function () { return { state: "unreachable" }; })
+    .then(function (r) {
+      var good = r.state === "verified";
+      div.innerHTML = '<span class="mono">' + id + '</span>' +
+        '<span class="' + (good ? "ok" : "bad") + '">' + r.state + '</span>' +
+        '<a href="https://zambo.dev/verify/?id=' + id + '">open on verify page</a>';
+      return good ? 1 : 0;
+    });
+}
+
+function run(ids) {
+  var results = document.getElementById("results");
+  var summary = document.getElementById("summary");
+  results.innerHTML = "";
+  summary.textContent = "";
+  if (!ids.length) {
+    summary.textContent = "no zambo receipt links found in that text.";
+    return;
+  }
+  var capped = ids.length > MAX;
+  var list = ids.slice(0, MAX);
+  summary.textContent = "checking " + list.length + " receipt" + (list.length === 1 ? "" : "s") + "..." +
+    (capped ? " (scan capped at " + MAX + "; " + ids.length + " found)" : "");
+  var jobs = list.map(function (id) { return check(id, rowEl(id)); });
+  Promise.all(jobs).then(function (counts) {
+    var ok = counts.reduce(function (a, b) { return a + b; }, 0);
+    summary.textContent = ok + " of " + list.length + " receipts verified" +
+      (capped ? " (scan capped at " + MAX + " of " + ids.length + " found)" : "");
+  });
+}
+
+document.getElementById("go").addEventListener("click", function () {
+  run(extractIds(document.getElementById("input").value));
+});
+
+if (location.hash.indexOf("#ids=") === 0) {
+  var raw = location.hash.slice(5).split(",").map(function (s) { return s.trim().toLowerCase(); })
+    .filter(function (s) { return new RegExp("^" + UUID + "$", "i").test(s); });
+  if (raw.length) run(raw);
+}
+</script>
+</body>
+</html>
